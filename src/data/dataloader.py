@@ -39,10 +39,11 @@ class Dataloader:
             ]
         )
 
-        x, y = x.to(self.device), y.to(self.device)
         if self.pin_memory and self.device != torch.device("cpu"):
             x = x.pin_memory().to(self.device, non_blocking=True)
             y = y.pin_memory().to(self.device, non_blocking=True)
+        else:
+            x, y = x.to(self.device), y.to(self.device)
         return x, y
 
     def __len__(self) -> int:
