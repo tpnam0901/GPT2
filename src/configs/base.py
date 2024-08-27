@@ -1,7 +1,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Union, List
+from typing import Tuple
 import importlib
 import sys
 
@@ -114,8 +114,9 @@ class Config(BaseConfig):
         self.device: str = "cpu"
 
         # ---------------------------------- Optim settings ----------------------------------#
-        self.learning_rate: float = 0.0001
-        self.weight_decay: float = 0.0001
+        self.learning_rate: float = 6e-4
+        self.weight_decay: float = 1e-1
+        self.betas: Tuple[float, float] = (0.9, 0.95)
         self.lr_step_size: int = 50
         self.gamma: float = 0.1
 
