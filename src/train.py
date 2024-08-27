@@ -14,250 +14,188 @@ import argparse
 import logging
 import mlflow
 import datetime
-import scipy
-from sklearn.metrics import roc_auc_score
-from torch import optim
 from tqdm.auto import tqdm
-from data.dataloader import build_random_train_val_dataset
 from configs.base import Config, import_config
-from models import networks
+from models import optimizers
+from models.gpt import GPT2
+from models.losses import GPTLoss
+from data.dataloader import Dataloader
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
+DEBUG = True
+
 
 def main(cfg: Config):
+    # ---------------------------------- Logging, Folder Initalize ----------------------------------#
 
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    cfg.checkpoint_dir = os.path.join(cfg.checkpoint_dir, cfg.model_type)
-    if cfg.model_type == "BirdClassification":
-        cfg.checkpoint_dir = os.path.join(
-            cfg.checkpoint_dir, cfg.audio_encoder_type, current_time
+    if not DEBUG:
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        cfg.checkpoint_dir = os.path.join(cfg.checkpoint_dir, cfg.name, current_time)
+
+        # Log, weight, mlflow folder
+        log_dir = os.path.join(cfg.checkpoint_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Add logger to log folder
+        logging.getLogger().setLevel(logging.INFO)
+        file_handler = logging.FileHandler(os.path.join(log_dir, "train.log"))
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
+        logger = logging.getLogger(cfg.name)
+        logger.addHandler(file_handler)
+        logger.addHandler(logging.StreamHandler())
+
+        # Add mlflow to log folder
+        mlflow.set_tracking_uri(
+            uri=f'file://{os.path.abspath(os.path.join(log_dir, "mlruns"))}'
+        )
+
+        # Save configs
+        logger.info("Saving config to {}".format(cfg.checkpoint_dir))
+        cfg.save(cfg.checkpoint_dir)
+        cfg.show()
     else:
-        cfg.checkpoint_dir = os.path.join(
-            cfg.checkpoint_dir, cfg.panns_type, current_time
-        )
+        logger = logging.getLogger("Debug")
 
-    # Log, weight, mlflow folder
-    log_dir = os.path.join(cfg.checkpoint_dir, "logs")
-    os.makedirs(log_dir, exist_ok=True)
-
-    ## Add logger to log folder
-    logging.getLogger().setLevel(logging.INFO)
-    file_handler = logging.FileHandler(os.path.join(log_dir, "train.log"))
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
-    logger = logging.getLogger(cfg.name)
-    logger.addHandler(file_handler)
-    logger.addHandler(logging.StreamHandler())
-
-    ## Add mlflow to log folder
-    mlflow.set_tracking_uri(
-        uri=f'file://{os.path.abspath(os.path.join(log_dir, "mlruns"))}'
-    )
+    # ---------------------------------- Model Initalize ----------------------------------#
+    logger.info("Building model...")
+    cpu_device = torch.device("cpu")
+    device = torch.device(cfg.device)
+    model = GPT2(cfg)
+    model.to(cpu_device)
+    if cfg.pretrained:
+        model.load_state_dict(torch.load(cfg.pretrained, map_location=cpu_device))
+    model.to(device)
+    logger.info("Number of parameters: {:.2f}M".format(model.get_num_params() / 1e6))
 
     # Preparing checkpoint output
     weight_best_path = os.path.join(cfg.checkpoint_dir, "weight_best.pth")
     weight_last_path = os.path.join(cfg.checkpoint_dir, "weight_last.pt")
 
+    # ---------------------------------- Train Initalize ----------------------------------#
     # Build dataset
     logger.info("Building dataset...")
-    (train_dataloader, test_dataloader), num_classes = build_random_train_val_dataset(
-        data_root=cfg.data_root,
-        data_type=cfg.data_type,
-        batch_size=cfg.batch_size,
-        seed=SEED,
-        max_audio_sec=cfg.max_audio_sec,
-    )
-    cfg.num_classes = num_classes
-
-    # Save configs
-    logger.info("Saving config to {}".format(cfg.checkpoint_dir))
-    cfg.save(cfg.checkpoint_dir)
-    cfg.show()
-
-    logger.info("Building model, loss and optimizer...")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = getattr(networks, cfg.model_type)(cfg)
-    model.to(device)
-
-    ccl = nn.CrossEntropyLoss()
-
-    optimizer = optim.Adam(
-        params=model.parameters(),
-        lr=cfg.learning_rate,
-        weight_decay=cfg.weight_decay,
+    train_dataloader = Dataloader(
+        cfg.train_bin,
+        cfg.batch_size,
+        cfg.block_size,
+        cfg.pin_memory,
+        device,
     )
 
-    lr_scheduler = optim.lr_scheduler.StepLR(
-        optimizer,
-        step_size=cfg.lr_step_size,
-        gamma=cfg.gamma,
+    val_dataloader = Dataloader(
+        cfg.val_bin,
+        cfg.batch_size,
+        cfg.block_size,
+        cfg.pin_memory,
+        device,
     )
+
+    logger.info("Building optimizer and loss functions")
+    # Build optimizer
+    optimizer = getattr(optimizers, cfg.optimizer)(model, cfg)
+    lr_scheduler = getattr(optimizers, cfg.lr_scheduler)(optimizer, cfg)
+
+    # Build loss functions
+    criterion = GPTLoss()
 
     best_loss = float(np.inf)
-    best_auc = -1.0
 
     global_train_step = 0
     global_val_step = 0
-    epoch_current = -1
-    epoch_current_step = -1
-    num_steps = len(train_dataloader)
 
-    resume = cfg.resume
-    if resume:
+    if False:
         checkpoint = torch.load(weight_last_path)
-        epoch_current = checkpoint["epoch"]
-        epoch_current_step = checkpoint["epoch_current_step"]
         global_train_step = checkpoint["global_train_step"]
         global_val_step = checkpoint["global_val_step"]
         best_loss = checkpoint["best_loss"]
         model.load_state_dict(checkpoint["state_dict_model"])
         optimizer.load_state_dict(checkpoint["state_dict_optim_model"])
-        lr_scheduler.load_state_dict(checkpoint["state_dict_scheduler_model"])
+        lr_scheduler.n_steps = checkpoint["lr_scheduler_step"]
         logger.info(
-            "Resume training from Epoch {}/{} - Step {}/{}".format(
-                epoch_current + 1, cfg.epochs, epoch_current_step, num_steps
-            )
+            "Resume training from Step {}/{}".format(global_train_step, cfg.num_iters)
         )
     else:
         logger.info("Start training...")
 
     with mlflow.start_run():
-        for epoch in range(cfg.epochs):
-            if epoch < 5:
-                model.freeze_encoder()
-            else:
-                model.unfreeze_encoder()
+        total_loss_train = []
+        model.train()
+        with tqdm(total=cfg.num_iters, ascii=True) as pbar:
+            for step, (inputs, labels) in enumerate(iter(train_dataloader)):
+                if step > cfg.num_iters - 1:
+                    break
+                global_train_step += 1
 
-            if epoch < epoch_current:
-                continue
-            total_loss_train = []
-            total_auc_train = []
-            logger.info("Train epoch {}/{}".format(epoch + 1, cfg.epochs))
+                optimizer.zero_grad()
 
-            model.train()
-            with tqdm(total=num_steps, ascii=True) as pbar:
-                for step, (inputs, labels) in enumerate(iter(train_dataloader)):
-                    if cfg.resume:
-                        if epoch_current_step < step:
-                            continue
-                        else:
-                            resume = False
-                            continue
-                    global_train_step += 1
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
+                loss.backward()
 
-                    optimizer.zero_grad()
+                optimizer.step()
+                lr_scheduler.step()
 
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
+                loss = loss.detach().cpu().numpy()
+                total_loss_train.append(loss.item())
+                mlflow.log_metric("loss", loss.item(), step=global_train_step)
 
-                    outputs = model(inputs)
-                    loss = ccl(outputs, labels)
-                    loss.backward()
+                postfix = "Loss: {:.4f}".format(loss.item())
+                pbar.set_description(postfix)
+                pbar.update(1)
 
-                    optimizer.step()
+                if global_train_step % cfg.ckpt_save_fred == 0:
+                    checkpoint = {
+                        "global_train_step": global_train_step,
+                        "global_val_step": global_val_step,
+                        "best_loss": best_loss,
+                        "state_dict_model": model.state_dict(),
+                        "state_dict_optim_model": optimizer.state_dict(),
+                        "lr_scheduler_step": lr_scheduler.n_steps,
+                    }
+                    torch.save(checkpoint, weight_last_path)
 
-                    inputs = inputs.detach().cpu().numpy()
-                    labels = labels.detach().cpu().numpy()
-                    outputs = outputs.detach().cpu().numpy()
-                    loss = loss.detach().cpu().numpy()
+                if global_train_step % cfg.ckpt_save_fred == 0:
+                    logger.info(
+                        "Loss after {} iters: {:.4f}".format(
+                            cfg.ckpt_save_fred,
+                            np.mean(total_loss_train).item(),
+                        )
+                    )
+                    total_loss_train = []
 
-                    probs = scipy.special.softmax(outputs, axis=1)
-                    auc = float(
-                        roc_auc_score(
-                            labels,
-                            probs,
-                            multi_class="ovo",
-                            average="macro",
-                            labels=range(cfg.num_classes),
+                    total_loss_val = []
+                    model.eval()
+                    global_val_step += 1
+                    logger.info("Evaluating model on the validation dataset")
+                    for inputs, labels in tqdm(
+                        iter(val_dataloader), total=cfg.num_val_iters
+                    ):
+
+                        with torch.no_grad():
+                            outputs = model(inputs)
+                            loss = criterion(outputs, labels)
+                            loss = loss.detach().cpu().numpy()
+                        total_loss_val.append(loss.item())
+
+                    val_loss = np.mean(total_loss_val).item()
+                    mlflow.log_metric("val_loss", val_loss, step=global_val_step)
+                    logger.info(
+                        "Iter {}/{} - val_loss: {:.4f} ".format(
+                            global_train_step,
+                            cfg.num_iters,
+                            val_loss,
                         )
                     )
 
-                    total_auc_train.append(auc)
-                    total_loss_train.append(loss.item())
-
-                    mlflow.log_metric("loss", loss.item(), step=global_train_step)
-
-                    mlflow.log_metric("auc", auc, step=global_train_step)
-
-                    postfix = "Epoch {}/{} - loss: {:.4f} - auc: {:.4f}".format(
-                        epoch + 1, cfg.epochs, loss.item(), auc
-                    )
-                    pbar.set_description(postfix)
-                    pbar.update(1)
-
-                    if global_train_step % cfg.ckpt_save_fred == 0:
-                        checkpoint = {
-                            "epoch": epoch,
-                            "epoch_current_step": step,
-                            "global_train_step": global_train_step,
-                            "global_val_step": global_val_step,
-                            "best_loss": best_loss,
-                            "state_dict_model": model.state_dict(),
-                            "state_dict_optim_model": optimizer.state_dict(),
-                            "state_dict_scheduler_model": lr_scheduler.state_dict(),
-                        }
-                        torch.save(checkpoint, weight_last_path)
-
-            logger.info(
-                "Epoch {}/{} - epoch_loss: {:.4f} - epoch_auc: {:.4f}".format(
-                    epoch + 1,
-                    cfg.epochs,
-                    np.mean(total_loss_train).item(),
-                    np.mean(total_auc_train).item(),
-                )
-            )
-
-            total_loss_val = []
-            total_auc_val = []
-            model.eval()
-            global_val_step += 1
-            for inputs, labels in tqdm(iter(test_dataloader)):
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                with torch.no_grad():
-                    outputs = model(inputs)
-                    loss = ccl(outputs, labels)
-
-                    inputs = inputs.detach().cpu().numpy()
-                    labels = labels.detach().cpu().numpy()
-                    outputs = outputs.detach().cpu().numpy()
-                    loss = loss.detach().cpu().numpy()
-
-                    probs = scipy.special.softmax(outputs, axis=1)
-                    auc = roc_auc_score(
-                        labels,
-                        probs,
-                        multi_class="ovo",
-                        average="macro",
-                        labels=range(cfg.num_classes),
-                    )
-
-                total_auc_val.append(auc)
-                total_loss_val.append(loss.item())
-            total_loss = np.mean(total_loss_val).item()
-            total_auc = np.mean(total_auc_val).item()
-
-            mlflow.log_metric("val_loss", float(total_loss), step=global_val_step)
-            mlflow.log_metric("val_auc", float(total_auc), step=global_val_step)
-            logger.info(
-                "Epoch {}/{} - val_loss: {:.4f} - val_auc: {:.4f}".format(
-                    epoch + 1, cfg.epochs, total_loss, total_auc
-                )
-            )
-
-            lr_scheduler.step()
-
-            if total_auc > best_auc:
-                best_auc = total_auc
-                torch.save(model.state_dict(), weight_best_path)
+                    if val_loss < best_loss:
+                        best_loss = val_loss
+                        torch.save(model.state_dict(), weight_best_path)
 
     end_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     logger.info("Training finished at {}".format(end_time))
@@ -286,7 +224,7 @@ def arg_parser():
 if __name__ == "__main__":
     args = arg_parser()
     cfg: Config = import_config(args.config)
-    if cfg.resume and cfg.opt_path:
+    if False and cfg.resume and cfg.opt_path:
         resume = cfg.resume
         resume_path = cfg.resume_path
         cfg.load(cfg.opt_path)

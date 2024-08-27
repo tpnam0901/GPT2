@@ -107,22 +107,29 @@ class Config(BaseConfig):
 
     def set_args(self, **kwargs):
         # ---------------------------------- Training settings ----------------------------------#
-        self.epochs: int = 250
+        self.num_iters: int = 10000
+        self.num_val_iters: int = 5000
         self.batch_size: int = 32
         self.checkpoint_dir: "str" = "working/checkpoints"
         self.ckpt_save_fred: int = 4000
         self.device: str = "cpu"
 
         # ---------------------------------- Optim settings ----------------------------------#
+        self.optimizer: str = "adamw"
         self.learning_rate: float = 6e-4
         self.weight_decay: float = 1e-1
         self.betas: Tuple[float, float] = (0.9, 0.95)
-        self.lr_step_size: int = 50
-        self.gamma: float = 0.1
+
+        # PlaceHolderScheduledOptim, ScheduledOptim
+        self.lr_scheduler: str = "ScheduledOptim"
+        self.warmup_iters: int = 2000
+        self.lr_decay_iters: int = 600_000
+        self.min_lr: float = 6e-5
 
         # ---------------------------------- Model settings ----------------------------------#
         self.pretrained: str = ""
         self.block_size: int = 1024
+        self.crop_block_size: int = 1024
         # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
         self.vocab_size: int = 50257
         self.n_layer: int = 12
@@ -133,11 +140,9 @@ class Config(BaseConfig):
         self.bias: bool = True
 
         # ---------------------------------- Dataset ----------------------------------#
-        self.data_root: str = "working/birdclef-2024/train_audio"
-        self.data_type: str = "waveform"  # waveform, log_mel
-        self.num_workers: int = 8  # map to "workers"
-        self.max_audio_sec: int = 5
-        self.sample_rate: int = 16000
+        self.train_bin: str = "working/dataset/openwebtext/train.bin"
+        self.val_bin: str = "working/dataset/openwebtext/val.bin"
+        self.pin_memory: bool = True
 
         for key, value in kwargs.items():
             setattr(self, key, value)
