@@ -1,7 +1,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import List, Union
+from typing import Union, List
 import importlib
 import sys
 
@@ -106,41 +106,32 @@ class Config(BaseConfig):
             setattr(self, key, value)
 
     def set_args(self, **kwargs):
-        # Training settings
+        # ---------------------------------- Training settings ----------------------------------#
         self.epochs: int = 250
         self.batch_size: int = 32
         self.checkpoint_dir: "str" = "working/checkpoints"
         self.ckpt_save_fred: int = 4000
+        self.device: str = "cpu"
 
-        # Optim settings
+        # ---------------------------------- Optim settings ----------------------------------#
         self.learning_rate: float = 0.0001
         self.weight_decay: float = 0.0001
         self.lr_step_size: int = 50
         self.gamma: float = 0.1
 
-        # Resume training
-        self.resume: bool = False  # map to "resume"
-        # path to checkpoint.pt file, only available when using save_all_states = True in previous training
-        self.resume_path: str = ""
-        self.opt_path: str = ""
+        # ---------------------------------- Model settings ----------------------------------#
+        self.pretrained: str = ""
+        self.block_size: int = 1024
+        # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+        self.vocab_size: int = 50257
+        self.n_layer: int = 12
+        self.n_head: int = 12
+        self.n_embd: int = 768
+        self.dropout: float = 0.0
+        # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+        self.bias: bool = True
 
-        # Model settings
-        self.model_type: str = "BirdClassification"  # [BirdClassification, PANNS]
-        self.model_infer: bool = False
-        self.audio_encoder_type: str = "hubert_base"  # hubert_base, wavlm_base
-        self.audio_dim: int = 768
-        self.linears: List = [256]
-        self.num_classes: int = -1
-
-        # PANNS model settings
-        self.panns_type: str = "Wavegram_Logmel_Cnn14"
-        self.window_size: int = 1024
-        self.hop_size: int = 320
-        self.mel_bins: int = 64
-        self.fmin: int = 125  # 50
-        self.fmax: int = 7500  # 14000
-
-        # Dataset
+        # ---------------------------------- Dataset ----------------------------------#
         self.data_root: str = "working/birdclef-2024/train_audio"
         self.data_type: str = "waveform"  # waveform, log_mel
         self.num_workers: int = 8  # map to "workers"
