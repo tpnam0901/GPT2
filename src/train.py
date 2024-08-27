@@ -26,41 +26,36 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
-DEBUG = True
-
 
 def main(cfg: Config):
     # ---------------------------------- Logging, Folder Initalize ----------------------------------#
 
-    if not DEBUG:
-        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        cfg.checkpoint_dir = os.path.join(cfg.checkpoint_dir, cfg.name, current_time)
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    cfg.checkpoint_dir = os.path.join(cfg.checkpoint_dir, cfg.name, current_time)
 
-        # Log, weight, mlflow folder
-        log_dir = os.path.join(cfg.checkpoint_dir, "logs")
-        os.makedirs(log_dir, exist_ok=True)
+    # Log, weight, mlflow folder
+    log_dir = os.path.join(cfg.checkpoint_dir, "logs")
+    os.makedirs(log_dir, exist_ok=True)
 
-        # Add logger to log folder
-        logging.getLogger().setLevel(logging.INFO)
-        file_handler = logging.FileHandler(os.path.join(log_dir, "train.log"))
-        file_handler.setFormatter(
-            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-        )
-        logger = logging.getLogger(cfg.name)
-        logger.addHandler(file_handler)
-        logger.addHandler(logging.StreamHandler())
+    # Add logger to log folder
+    logging.getLogger().setLevel(logging.INFO)
+    file_handler = logging.FileHandler(os.path.join(log_dir, "train.log"))
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    )
+    logger = logging.getLogger(cfg.name)
+    logger.addHandler(file_handler)
+    logger.addHandler(logging.StreamHandler())
 
-        # Add mlflow to log folder
-        mlflow.set_tracking_uri(
-            uri=f'file://{os.path.abspath(os.path.join(log_dir, "mlruns"))}'
-        )
+    # Add mlflow to log folder
+    mlflow.set_tracking_uri(
+        uri=f'file://{os.path.abspath(os.path.join(log_dir, "mlruns"))}'
+    )
 
-        # Save configs
-        logger.info("Saving config to {}".format(cfg.checkpoint_dir))
-        cfg.save(cfg.checkpoint_dir)
-        cfg.show()
-    else:
-        logger = logging.getLogger("Debug")
+    # Save configs
+    logger.info("Saving config to {}".format(cfg.checkpoint_dir))
+    cfg.save(cfg.checkpoint_dir)
+    cfg.show()
 
     # ---------------------------------- Model Initalize ----------------------------------#
     logger.info("Building model...")
