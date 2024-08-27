@@ -1,106 +1,49 @@
 import os
 import torch
+import numpy as np
 from typing import Tuple
-from torch.utils.data import DataLoader, Dataset
-from sklearn.model_selection import train_test_split
-
-from .utils import read_audio, pad_sequence
-from glob import glob
-import random
 
 
-class BaseDataset(Dataset):
+class Dataloader:
     def __init__(
         self,
-        X,
-        y,
-        sample_rate=None,
-        max_audio_sec=5,
+        bin_path: str,
+        batch_size: int,
+        block_size: int,
+        pin_memory: bool = False,
+        device: torch.device = torch.device("cpu"),
     ):
-        super(BaseDataset, self).__init__()
-        self.X = X
-        self.y = y
-        self.sample_rate = sample_rate
-        self.max_audio_sec = max_audio_sec
+        super(Dataloader, self).__init__()
+        self.bin_path = os.path.abspath(bin_path)
+        self.block_size = block_size
+        self.batch_size = batch_size
+        self.pin_memory = pin_memory
+        self.device = device
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        waveform, sample_rate = read_audio(self.X[index], self.sample_rate)
-        max_audio_len = sample_rate * self.max_audio_sec
-        # random pick start point
-        len_waveform = max(waveform.shape)
-        if len_waveform > max_audio_len:
-            start = random.choice(range(len_waveform - max_audio_len))
-            waveform = waveform[:, start : start + max_audio_len]
-        label = torch.tensor(self.y[index])
-        return waveform, label
+        # Recreate np.memmap every batch to avoid a memory leak
+        data = np.memmap(self.bin_path, dtype=np.uint16, mode="r")
+        ix = torch.randint(len(data) - self.block_size, (self.batch_size,))
+        x = torch.stack(
+            [
+                torch.from_numpy((data[i : i + self.block_size]).astype(np.int64))
+                for i in ix
+            ]
+        )
+        y = torch.stack(
+            [
+                torch.from_numpy(
+                    (data[i + 1 : i + 1 + self.block_size]).astype(np.int64)
+                )
+                for i in ix
+            ]
+        )
 
-    def __len__(self):
-        return len(self.X)
+        x, y = x.to(self.device), y.to(self.device)
+        if self.pin_memory and self.device != torch.device("cpu"):
+            x = x.pin_memory().to(self.device, non_blocking=True)
+            y = y.pin_memory().to(self.device, non_blocking=True)
+        return x, y
 
-
-def collate_fn_base(batch):
-
-    # A data tuple has the form:
-    # waveform, sample_rate, label, speaker_id, utterance_number
-
-    tensors, targets = [], []
-
-    # Gather in lists, and encode labels as indices
-    for waveform, label in batch:
-        tensors += [waveform]
-        targets += [label]
-
-    # Group the list of tensors into a batched tensor
-    tensors = pad_sequence(tensors)[:, 0, :]
-    targets = torch.stack(targets)
-
-    return tensors, targets
-
-
-def build_random_train_val_dataset(
-    data_root: str = "reid_skip_test",
-    data_type: str = "waveform",
-    batch_size: int = 32,
-    max_audio_sec: int = 5,
-    seed=0,
-):
-    sample_paths = glob(os.path.join(data_root, "*", "*"))
-    labels = [CLASSES[path.split("/")[-2]] for path in sample_paths]
-
-    dataset = {
-        "waveform": BaseDataset,
-    }
-    dataset_fn = dataset[data_type]
-
-    # using the train test split function
-    X_train, X_test, y_train, y_test = train_test_split(
-        sample_paths, labels, random_state=seed, test_size=0.2, shuffle=True
-    )
-
-    training_data = dataset_fn(X_train, y_train, max_audio_sec=max_audio_sec)
-    test_data = dataset_fn(X_test, y_test, max_audio_sec=max_audio_sec)
-
-    def worker_init_fn(worker_id):
-        os.sched_setaffinity(0, list(range(os.cpu_count())))
-
-    collate_fn = collate_fn_base if data_type == "waveform" else None
-
-    train_dataloader = DataLoader(
-        training_data,
-        batch_size=batch_size,
-        shuffle=True,
-        pin_memory=True,
-        collate_fn=collate_fn,
-        worker_init_fn=worker_init_fn,
-        drop_last=True,
-    )
-    test_dataloader = DataLoader(
-        test_data,
-        batch_size=batch_size,
-        shuffle=False,
-        pin_memory=True,
-        collate_fn=collate_fn,
-        worker_init_fn=worker_init_fn,
-        drop_last=True,
-    )
-    return (train_dataloader, test_dataloader), len(set(labels))
+    def __len__(self) -> int:
+        return 0
