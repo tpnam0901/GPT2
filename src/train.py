@@ -141,7 +141,7 @@ def main(cfg: Config):
                     loss = criterion(logits, targets)
 
                 scaler.scale(loss).backward()
-                scaler.scale(optimizer).step()
+                scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
                 lr_scheduler.step()
