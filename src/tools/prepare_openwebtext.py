@@ -38,7 +38,7 @@ num_proc_load_dataset = num_proc
 enc = tiktoken.get_encoding("gpt2")
 
 # takes 54GB in huggingface .cache dir, about 8M documents (8,013,769)
-dataset = load_dataset("openwebtext", num_proc=num_proc_load_dataset)
+dataset = load_dataset("Skylion007/openwebtext", num_proc=num_proc_load_dataset)
 
 # owt by default only contains the 'train' split, so create a test split
 split_dataset = dataset["train"].train_test_split(
