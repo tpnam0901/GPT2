@@ -6,5 +6,9 @@ class GPTLoss(nn.Module):
         super(GPTLoss, self).__init__()
         self.ccl = nn.CrossEntropyLoss()
 
-    def forward(self, inputs, targets):
-        return self.ccl(inputs, targets)
+    def forward(self, logits, targets):
+        return self.ccl(
+            logits.view(-1, logits.size(-1)),
+            targets.view(-1),
+            ignore_index=-1,
+        )

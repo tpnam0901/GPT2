@@ -127,15 +127,15 @@ def main(cfg: Config):
         total_loss_train = []
         model.train()
         with tqdm(total=cfg.num_iters, ascii=True) as pbar:
-            for step, (inputs, labels) in enumerate(iter(train_dataloader)):
+            for step, (inputs, targets) in enumerate(iter(train_dataloader)):
                 if step > cfg.num_iters - 1:
                     break
                 global_train_step += 1
 
                 optimizer.zero_grad()
 
-                outputs = model(inputs)
-                loss = criterion(outputs, labels)
+                logits = model(inputs)
+                loss = criterion(logits, targets)
                 loss.backward()
 
                 optimizer.step()
@@ -150,6 +150,13 @@ def main(cfg: Config):
                 pbar.update(1)
 
                 if global_train_step % cfg.ckpt_save_fred == 0:
+                    logger.info(
+                        "Loss after {} iters: {:.4f}".format(
+                            cfg.ckpt_save_fred,
+                            np.mean(total_loss_train).item(),
+                        )
+                    )
+                    total_loss_train = []
                     checkpoint = {
                         "global_train_step": global_train_step,
                         "global_val_step": global_val_step,
@@ -160,26 +167,17 @@ def main(cfg: Config):
                     }
                     torch.save(checkpoint, weight_last_path)
 
-                if global_train_step % cfg.ckpt_save_fred == 0:
-                    logger.info(
-                        "Loss after {} iters: {:.4f}".format(
-                            cfg.ckpt_save_fred,
-                            np.mean(total_loss_train).item(),
-                        )
-                    )
-                    total_loss_train = []
-
                     total_loss_val = []
                     model.eval()
                     global_val_step += 1
                     logger.info("Evaluating model on the validation dataset")
-                    for inputs, labels in tqdm(
+                    for inputs, targets in tqdm(
                         iter(val_dataloader), total=cfg.num_val_iters
                     ):
 
                         with torch.no_grad():
-                            outputs = model(inputs)
-                            loss = criterion(outputs, labels)
+                            logits = model(inputs)
+                            loss = criterion(logits, targets)
                             loss = loss.detach().cpu().numpy()
                         total_loss_val.append(loss.item())
 
