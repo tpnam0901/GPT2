@@ -99,6 +99,9 @@ def main(cfg: Config):
     # Build loss functions
     criterion = GPTLoss()
 
+    # Build automatic mixed precision
+    scaler = torch.cuda.amp.GradScaler(enabled=cfg.use_amp)
+
     best_loss = float(np.inf)
 
     global_train_step = 0
@@ -127,13 +130,18 @@ def main(cfg: Config):
                     break
                 global_train_step += 1
 
+                with torch.autocast(
+                    device_type="cuda" if cfg.device != "cpu" else "cpu",
+                    dtype=torch.float16,
+                    enabled=cfg.use_amp,
+                ):
+                    logits = model(inputs)
+                    loss = criterion(logits, targets)
+
+                scaler.scale(loss).backward()
+                scaler.scale(optimizer).step()
+                scaler.update()
                 optimizer.zero_grad()
-
-                logits = model(inputs)
-                loss = criterion(logits, targets)
-                loss.backward()
-
-                optimizer.step()
                 lr_scheduler.step()
 
                 loss = loss.detach().cpu().numpy()
@@ -158,6 +166,7 @@ def main(cfg: Config):
                         "best_loss": best_loss,
                         "state_dict_model": model.state_dict(),
                         "state_dict_optim_model": optimizer.state_dict(),
+                        "state_dict_scaler": scaler.state_dict(),
                         "lr_scheduler_step": lr_scheduler.n_steps,
                     }
                     torch.save(checkpoint, weight_last_path)

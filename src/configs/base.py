@@ -112,7 +112,8 @@ class Config(BaseConfig):
         self.batch_size: int = 32
         self.checkpoint_dir: "str" = "working/checkpoints"
         self.ckpt_save_fred: int = 4000
-        self.device: str = "cpu"
+        self.device: str = "cuda:0"
+        self.use_amp: bool = True
 
         # ---------------------------------- Optim settings ----------------------------------#
         self.optimizer: str = "adamw"
