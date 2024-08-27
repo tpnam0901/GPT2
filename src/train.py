@@ -100,6 +100,8 @@ def main(cfg: Config):
     criterion = GPTLoss()
 
     # Build automatic mixed precision
+    if cfg.device == "cpu":
+        cfg.use_amp = False
     scaler = torch.cuda.amp.GradScaler(enabled=cfg.use_amp)
 
     best_loss = float(np.inf)
