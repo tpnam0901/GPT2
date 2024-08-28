@@ -157,92 +157,94 @@ def main(cfg: Config):
         # )
 
     logger.info("Start training...")
-    log_rank = seed_offset - SEED
     # unwrap DDP container if needed
     raw_model = model.module if ddp else model
+    total_loss_train = []
+    model.train()
 
-    with mlflow.start_run():
-        total_loss_train = []
-        model.train()
-        for inputs, targets in iter(train_dataloader):
-            if global_train_step >= cfg.num_iters:
-                break
-            global_train_step += 1
+    if master_process:
+        mlflow.start_run()
+    for inputs, targets in iter(train_dataloader):
+        if global_train_step >= cfg.num_iters:
+            break
+        global_train_step += 1
 
-            with torch.autocast(
-                device_type="cuda" if cfg.device != "cpu" else "cpu",
-                dtype=torch.float16,
-                enabled=cfg.use_amp,
+        with torch.autocast(
+            device_type="cuda" if cfg.device != "cpu" else "cpu",
+            dtype=torch.float16,
+            enabled=cfg.use_amp,
+        ):
+            logits = model(inputs)
+            loss = criterion(logits, targets)
+
+        scaler.scale(loss).backward()
+        # clip the gradient
+        if cfg.grad_clip != 0.0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad()
+        lr_scheduler.step()
+
+        loss = loss.detach().cpu().numpy()
+        total_loss_train.append(loss.item())
+
+        if global_train_step % cfg.log_freq == 0 and master_process:
+            logger.info("Loss: {:.4f}".format(loss.item()))
+            mlflow.log_metric(f"loss", loss.item(), step=global_train_step)
+
+        if global_train_step % cfg.ckpt_save_freq == 0 and master_process:
+            logger.info(
+                "Loss after {} iters: {:.4f}".format(
+                    cfg.ckpt_save_freq,
+                    np.mean(total_loss_train).item(),
+                )
+            )
+            total_loss_train = []
+            checkpoint = {
+                "global_train_step": global_train_step,
+                "global_val_step": global_val_step,
+                "best_loss": best_loss,
+                "state_dict_model": raw_model.state_dict(),
+                "state_dict_optim_model": optimizer.state_dict(),
+                "state_dict_scaler": scaler.state_dict(),
+                "lr_scheduler_step": lr_scheduler.n_steps,
+            }
+            torch.save(checkpoint, weight_last_path)
+
+            total_loss_val = []
+            model.eval()
+            global_val_step += 1
+            logger.info("Evaluating model on the validation dataset")
+            for step, (inputs, targets) in tqdm(
+                enumerate(iter(val_dataloader)), total=cfg.num_val_iters
             ):
-                logits = model(inputs)
-                loss = criterion(logits, targets)
+                if step > cfg.num_val_iters:
+                    break
 
-            scaler.scale(loss).backward()
-            # clip the gradient
-            if cfg.grad_clip != 0.0:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
-            optimizer.zero_grad()
-            lr_scheduler.step()
+                with torch.no_grad():
+                    logits = model(inputs)
+                    loss = criterion(logits, targets)
+                    loss = loss.detach().cpu().numpy()
+                total_loss_val.append(loss.item())
 
-            loss = loss.detach().cpu().numpy()
-            total_loss_train.append(loss.item())
-            mlflow.log_metric(f"loss_{log_rank}", loss.item(), step=global_train_step)
-            if global_train_step % cfg.log_freq == 0 and master_process:
-                logger.info("Loss: {:.4f}".format(loss.item()))
-
-            if global_train_step % cfg.ckpt_save_freq == 0 and master_process:
-                logger.info(
-                    "Loss after {} iters: {:.4f}".format(
-                        cfg.ckpt_save_freq,
-                        np.mean(total_loss_train).item(),
-                    )
+            val_loss = np.mean(total_loss_val).item()
+            mlflow.log_metric("val_loss", val_loss, step=global_val_step)
+            logger.info(
+                "Iter {}/{} - val_loss: {:.4f} ".format(
+                    global_train_step,
+                    cfg.num_iters,
+                    val_loss,
                 )
-                total_loss_train = []
-                checkpoint = {
-                    "global_train_step": global_train_step,
-                    "global_val_step": global_val_step,
-                    "best_loss": best_loss,
-                    "state_dict_model": raw_model.state_dict(),
-                    "state_dict_optim_model": optimizer.state_dict(),
-                    "state_dict_scaler": scaler.state_dict(),
-                    "lr_scheduler_step": lr_scheduler.n_steps,
-                }
-                torch.save(checkpoint, weight_last_path)
+            )
 
-                total_loss_val = []
-                model.eval()
-                global_val_step += 1
-                logger.info("Evaluating model on the validation dataset")
-                for step, (inputs, targets) in tqdm(
-                    enumerate(iter(val_dataloader)), total=cfg.num_val_iters
-                ):
-                    if step > cfg.num_val_iters:
-                        break
-
-                    with torch.no_grad():
-                        logits = model(inputs)
-                        loss = criterion(logits, targets)
-                        loss = loss.detach().cpu().numpy()
-                    total_loss_val.append(loss.item())
-
-                val_loss = np.mean(total_loss_val).item()
-                mlflow.log_metric("val_loss", val_loss, step=global_val_step)
-                logger.info(
-                    "Iter {}/{} - val_loss: {:.4f} ".format(
-                        global_train_step,
-                        cfg.num_iters,
-                        val_loss,
-                    )
-                )
-
-                if val_loss < best_loss:
-                    best_loss = val_loss
-                    torch.save(raw_model.state_dict(), weight_best_path)
-                model.train()
-
+            if val_loss < best_loss:
+                best_loss = val_loss
+                torch.save(raw_model.state_dict(), weight_best_path)
+            model.train()
+    if master_process:
+        mlflow.end_run()
     end_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     logger.info("Training finished at {}".format(end_time))
 
