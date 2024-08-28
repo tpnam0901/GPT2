@@ -190,7 +190,7 @@ def main(cfg: Config):
             loss = loss.detach().cpu().numpy()
             total_loss_train.append(loss.item())
             mlflow.log_metric(f"loss_{log_rank}", loss.item(), step=global_train_step)
-            if global_train_step % cfg.log_freq == 0:
+            if global_train_step % cfg.log_freq == 0 and master_process:
                 logger.info("Loss: {:.4f}".format(loss.item()))
 
             if global_train_step % cfg.ckpt_save_freq == 0 and master_process:
