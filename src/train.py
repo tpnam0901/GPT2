@@ -131,7 +131,7 @@ def main(cfg: Config):
         model.train()
         with tqdm(total=cfg.num_iters, ascii=True) as pbar:
             for step, (inputs, targets) in enumerate(iter(train_dataloader)):
-                if step > cfg.num_iters - 1:
+                if step >= cfg.num_iters:
                     break
                 global_train_step += 1
 
@@ -180,9 +180,11 @@ def main(cfg: Config):
                     model.eval()
                     global_val_step += 1
                     logger.info("Evaluating model on the validation dataset")
-                    for inputs, targets in tqdm(
-                        iter(val_dataloader), total=cfg.num_val_iters
+                    for step, (inputs, targets) in tqdm(
+                        enumerate(iter(val_dataloader)), total=cfg.num_val_iters
                     ):
+                        if step > cfg.num_val_iters:
+                            break
 
                         with torch.no_grad():
                             logits = model(inputs)
