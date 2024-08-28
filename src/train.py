@@ -32,36 +32,26 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
 
-def ddp_setup(rank: int, world_size: int):
-    """
-    Args:
-        rank: Unique identifier of each process
-       world_size: Total number of processes
-    """
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
-    torch.cuda.set_device(rank)
-    init_process_group(backend="nccl", rank=rank, world_size=world_size)
-
-
 def main(cfg: Config):
     # ---------------------------------- DDP Settings ----------------------------------#
-    master_process = True
+    device = cfg.device
     seed_offset = SEED
-    ddp_local_rank = -1
-    ddp_world_size = 1
     ddp = int(os.environ.get("RANK", -1)) != -1
     if ddp:
-        init_process_group(backend=cfg.ddp_backend)
+        init_process_group(
+            backend=cfg.ddp_backend, world_size=int(os.environ["WORLD_SIZE"])
+        )
         ddp_rank = int(os.environ["RANK"])
         ddp_local_rank = int(os.environ["LOCAL_RANK"])
-        ddp_world_size = int(os.environ["WORLD_SIZE"])
         device = f"cuda:{ddp_local_rank}"
         torch.cuda.set_device(device)
         # this process will do logging, checkpointing etc.
         master_process = ddp_rank == 0
         # each process gets a different seed
         seed_offset = ddp_rank + seed_offset
+    else:
+        master_process = True
+        ddp_local_rank = -1
 
     # ---------------------------------- Logging, Folder Initalize ----------------------------------#
     logger = logging.getLogger(cfg.name)
@@ -96,7 +86,7 @@ def main(cfg: Config):
     # ---------------------------------- Model Initalize ----------------------------------#
     logger.info("Building model...")
     cpu_device = torch.device("cpu")
-    device = torch.device(cfg.device)
+    device = torch.device(device)
     model = GPT2(cfg)
     model.to(cpu_device)
     if cfg.pretrained:
