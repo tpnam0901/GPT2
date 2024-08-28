@@ -1,60 +1,65 @@
 
 <h1 align="center">
-  <br>
-  <a href=""><img src="./assets/logo.png" alt="logo" width="200"></a>
-  <br>
-  NCoder0
+  PrivateGPT
   <br>
 </h1>
 
-<h4 align="center">A minimal Markdown Editor desktop app built on top of <a href="http://electron.atom.io" target="_blank">Electron</a>.</h4>
+<h4 align="center">New student assignment - GPT2 from scratch</a> </h4>
 
 <p align="center">
-<a href=""><img src="https://img.shields.io/github/stars/NCoder0/python" alt="stars"></a>
-<a href=""><img src="https://img.shields.io/github/forks/NCoder0/python" alt="forks"></a>
-<a href=""><img src="https://img.shields.io/github/license/NCoder0/python" alt="license"></a>
+<a href=""><img src="https://img.shields.io/github/stars/namphuongtran9196/privategpt?" alt="stars"></a>
+<a href=""><img src="https://img.shields.io/github/forks/namphuongtran9196/privategpt?" alt="forks"></a>
+<a href=""><img src="https://img.shields.io/github/license/namphuongtran9196/privategpt?" alt="license"></a>
 </p>
 
 <p align="center">
-  <a href="#key-features">Key Features</a> •
   <a href="#how-to-use">How To Use</a> •
-  <a href="#download">Download</a> •
-  <a href="#credits">Credits</a> •
-  <a href="#related">Related</a> •
-  <a href="#license">License</a>
+  <a href="#references">References</a> •
 </p>
-
-<h1 align="center">
-<img src="./assets/NCoder.gif" alt="ncoder"></a>
-</h1>
-
-## Key Features
 
 ## How To Use
+- Requirements
+```
+torch >=2.2.2
+CUDA >= 11.5
+python >= 3.10
+```
+- Clone this repository 
+```bash
+git clone https://github.com/tpnam0901/PrivateGPT.git
+cd PrivateGPT
+```
+- Create a conda environment and install requirements
+```bash
+conda env create --name py3.10 --file=environments.yml
+conda activate py3.10
+```
+- Download and preprocess dataset
+```bash
+mkdir -p src/working/dataset/openwebtext
+cd src/tools && python prepare_openwebtext.py --out_dir "../working/dataset/openwebtext"
+```
 
-## Download
+- Before starting training, you need to modify the [config file](./src/configs/base.py) in the config folder. You can refer to the config file in the config folder for more details.
 
-## Emailware
+```bash
+cd src && python train.py -cfg ../src/configs/4m-ser_bert_vggish.py
+```
 
+- Single GPU training
+```bash
+CUDA_VISIBLE_DEVICES=7 python train.py -cfg configs/openwebtext_gpt2.py
 
-## Credits
+- Multi GPU training
+```bash
+cd src
+OMP_NUM_THREADS=4 CUDA_VISIBLE_DEVICES=6,7 torchrun --standalone --nproc_per_node=2 train.py -cfg configs/openwebtext_gpt2.py
+```
 
-This software uses the following open source packages:
+## References
 
-- [Android](https://www.android.com/)
-- [IOS](https://www.apple.com/ios/ios-16/)
-
-## Related
-
-## Support
-
-<a href="https://www.buymeacoffee.com/ncoder0" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/purple_img.png" alt="Buy Me A Coffee" style="height: 41px !important;width: 174px !important;box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;-webkit-box-shadow: 0px 3px 2px 0px rgba(190, 190, 190, 0.5) !important;" ></a>
-
-## You may also like...
-
-## License
+[1] NanoGPT - A simplest, fastest repository for training/finetuning medium-sized GPTs. Available https://github.com/karpathy/nanoGPT.git
 
 ---
 
-> GitHub [@NCoder0](https://github.com/NCoder0) &nbsp;&middot;&nbsp;
-
+> GitHub [@tpnam0901](https://github.com/tpnam0901) &nbsp;&middot;&nbsp;
