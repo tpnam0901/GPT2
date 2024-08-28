@@ -79,14 +79,14 @@ def arg_parser():
 
     parser.add_argument(
         "--top_k",
-        type=float,
-        default=200,
+        type=int,
+        default=50,
     )
 
     parser.add_argument(
         "--max_new_tokens",
-        type=float,
-        default=500,
+        type=int,
+        default=100,
     )
     parser.add_argument("--best_ckpt", action="store_true")
     parser.add_argument("--debug", action="store_true")
