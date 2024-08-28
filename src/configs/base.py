@@ -1,7 +1,7 @@
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Union, List, Tuple
 import importlib
 import sys
 
@@ -112,14 +112,24 @@ class Config(BaseConfig):
         self.batch_size: int = 32
         self.checkpoint_dir: "str" = "working/checkpoints"
         self.ckpt_save_fred: int = 4000
+        # 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
         self.device: str = "cuda:0"
         self.use_amp: bool = True
+        # use PyTorch 2.0 to compile the model to be faster
+        self.compile = False
+        # nccl', 'gloo', etc.
+        self.ddp_backend: str = "nccl"
+        # only stepping the optimizer after a certain number of batches have been performed
+        self.gradient_accumulation_steps: int = 32
+        # path to opt config
+        self.resume: str = ""
 
         # ---------------------------------- Optim settings ----------------------------------#
         self.optimizer: str = "adamw"
         self.learning_rate: float = 6e-4
         self.weight_decay: float = 1e-1
         self.betas: Tuple[float, float] = (0.9, 0.95)
+        self.grad_clip: float = 0.0
 
         # PlaceHolderScheduledOptim, ScheduledOptim
         self.lr_scheduler: str = "ScheduledOptim"
