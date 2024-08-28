@@ -93,7 +93,8 @@ def main(cfg: Config):
         model.load_state_dict(torch.load(cfg.pretrained, map_location=cpu_device))
     if cfg.crop_block_size != cfg.block_size:
         model.crop_block_size(cfg.crop_block_size)
-        cfg.save(cfg.checkpoint_dir)
+        if master_process:
+            cfg.save(cfg.checkpoint_dir)
     model.to(device)
     logger.info("Number of parameters: {:.2f}M".format(model.get_num_params() / 1e6))
     if cfg.compile:
