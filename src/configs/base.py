@@ -111,7 +111,8 @@ class Config(BaseConfig):
         self.num_val_iters: int = 5000
         self.batch_size: int = 32
         self.checkpoint_dir: "str" = "working/checkpoints"
-        self.ckpt_save_fred: int = 4000
+        self.ckpt_save_freq: int = 4000
+        self.log_freq: int = 10
         # 'cpu', 'cuda', 'cuda:0', 'cuda:1', etc.
         self.device: str = "cuda:0"
         self.use_amp: bool = True
