@@ -10,8 +10,12 @@ class Config(BaseConfig):
             setattr(self, key, value)
 
     def add_args(self, **kwargs):
-        self.batch_size = 1
-        self.num_epochs = 250
+        self.name = "GPT2_XLarge"
+        # ---------------------------------- Model settings ----------------------------------#
+        self.pretrained = ""
+        self.n_layer = 48
+        self.n_head = 25
+        self.n_embd = 1600
 
         for key, value in kwargs.items():
             setattr(self, key, value)

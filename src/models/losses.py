@@ -1,20 +1,14 @@
-import argparse
-import logging
-
-logging.getLogger().setLevel(logging.INFO)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+import torch.nn as nn
+from torch.nn import functional as F
 
 
-def main(args):
-    logging.info(args.message)
+class GPTLoss(nn.Module):
+    def __init__(self):
+        super(GPTLoss, self).__init__()
 
-
-def arg_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--message", type=str, default="Hello World", help="model file")
-    return parser.parse_args()
-
-
-if __name__ == "__main__":
-    args = arg_parser()
-    main(args)
+    def forward(self, logits, targets):
+        return F.cross_entropy(
+            logits.view(-1, logits.size(-1)),
+            targets.view(-1),
+            ignore_index=-1,
+        )

@@ -1,263 +1,247 @@
 import random
 import numpy as np
 import torch
-import torch.nn as nn
 
-SEED = 0
+SEED = 1996
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 torch.cuda.manual_seed_all(SEED)
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
 
 import os
 import argparse
 import logging
 import mlflow
 import datetime
-import scipy
-from sklearn.metrics import roc_auc_score
-from torch import optim
 from tqdm.auto import tqdm
-from data.dataloader import build_random_train_val_dataset
 from configs.base import Config, import_config
-from models import networks
+from models import optimizers
+from models.gpt import GPT2
+from models.losses import GPTLoss
+from data.dataloader import Dataloader
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
+# DistributedDataParallel
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group, destroy_process_group
+
 
 def main(cfg: Config):
-
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    cfg.checkpoint_dir = os.path.join(cfg.checkpoint_dir, cfg.model_type)
-    if cfg.model_type == "BirdClassification":
-        cfg.checkpoint_dir = os.path.join(
-            cfg.checkpoint_dir, cfg.audio_encoder_type, current_time
+    # ---------------------------------- DDP Settings ----------------------------------#
+    device = cfg.device
+    seed_offset = SEED
+    ddp = int(os.environ.get("RANK", -1)) != -1
+    if ddp:
+        init_process_group(
+            backend=cfg.ddp_backend, world_size=int(os.environ["WORLD_SIZE"])
         )
+        ddp_rank = int(os.environ["RANK"])
+        ddp_local_rank = int(os.environ["LOCAL_RANK"])
+        device = f"cuda:{ddp_local_rank}"
+        torch.cuda.set_device(device)
+        # this process will do logging, checkpointing etc.
+        master_process = ddp_rank == 0
+        # each process gets a different seed
+        seed_offset = ddp_rank + seed_offset
     else:
-        cfg.checkpoint_dir = os.path.join(
-            cfg.checkpoint_dir, cfg.panns_type, current_time
+        master_process = True
+        ddp_local_rank = -1
+
+    # ---------------------------------- Logging, Folder Initalize ----------------------------------#
+    logger = logging.getLogger(cfg.name)
+    if master_process:
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        cfg.checkpoint_dir = os.path.join(cfg.checkpoint_dir, cfg.name, current_time)
+
+        # Log, weight, mlflow folder
+        log_dir = os.path.join(cfg.checkpoint_dir, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Add logger to log folder
+        logging.getLogger().setLevel(logging.INFO)
+        file_handler = logging.FileHandler(os.path.join(log_dir, "train.log"))
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
+        logger = logging.getLogger(cfg.name)
+        logger.addHandler(file_handler)
+        logger.addHandler(logging.StreamHandler())
+
+        # Add mlflow to log folder
+        mlflow.set_tracking_uri(
+            uri=f'file://{os.path.abspath(os.path.join(log_dir, "mlruns"))}'
         )
 
-    # Log, weight, mlflow folder
-    log_dir = os.path.join(cfg.checkpoint_dir, "logs")
-    os.makedirs(log_dir, exist_ok=True)
+        # Save configs
+        logger.info("Saving config to {}".format(cfg.checkpoint_dir))
+        cfg.save(cfg.checkpoint_dir)
+        cfg.show()
 
-    ## Add logger to log folder
-    logging.getLogger().setLevel(logging.INFO)
-    file_handler = logging.FileHandler(os.path.join(log_dir, "train.log"))
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    )
-    logger = logging.getLogger(cfg.name)
-    logger.addHandler(file_handler)
-    logger.addHandler(logging.StreamHandler())
-
-    ## Add mlflow to log folder
-    mlflow.set_tracking_uri(
-        uri=f'file://{os.path.abspath(os.path.join(log_dir, "mlruns"))}'
-    )
+    # ---------------------------------- Model Initalize ----------------------------------#
+    logger.info("Building model...")
+    cpu_device = torch.device("cpu")
+    device = torch.device(device)
+    model = GPT2(cfg)
+    model.to(cpu_device)
+    if cfg.pretrained:
+        model.load_state_dict(torch.load(cfg.pretrained, map_location=cpu_device))
+    if cfg.crop_block_size != cfg.block_size:
+        model.crop_block_size(cfg.crop_block_size)
+        cfg.save(cfg.checkpoint_dir)
+    model.to(device)
+    logger.info("Number of parameters: {:.2f}M".format(model.get_num_params() / 1e6))
+    if cfg.compile:
+        raise NotImplementedError
+        # model = torch.compile(model)
+    if ddp:
+        model = DDP(model, device_ids=[ddp_local_rank])
 
     # Preparing checkpoint output
     weight_best_path = os.path.join(cfg.checkpoint_dir, "weight_best.pth")
     weight_last_path = os.path.join(cfg.checkpoint_dir, "weight_last.pt")
 
+    # ---------------------------------- Train Initalize ----------------------------------#
     # Build dataset
     logger.info("Building dataset...")
-    (train_dataloader, test_dataloader), num_classes = build_random_train_val_dataset(
-        data_root=cfg.data_root,
-        data_type=cfg.data_type,
-        batch_size=cfg.batch_size,
-        seed=SEED,
-        max_audio_sec=cfg.max_audio_sec,
-    )
-    cfg.num_classes = num_classes
-
-    # Save configs
-    logger.info("Saving config to {}".format(cfg.checkpoint_dir))
-    cfg.save(cfg.checkpoint_dir)
-    cfg.show()
-
-    logger.info("Building model, loss and optimizer...")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    model = getattr(networks, cfg.model_type)(cfg)
-    model.to(device)
-
-    ccl = nn.CrossEntropyLoss()
-
-    optimizer = optim.Adam(
-        params=model.parameters(),
-        lr=cfg.learning_rate,
-        weight_decay=cfg.weight_decay,
+    train_dataloader = Dataloader(
+        cfg.train_bin,
+        cfg.batch_size,
+        cfg.block_size,
+        cfg.pin_memory,
+        device,
     )
 
-    lr_scheduler = optim.lr_scheduler.StepLR(
-        optimizer,
-        step_size=cfg.lr_step_size,
-        gamma=cfg.gamma,
+    val_dataloader = Dataloader(
+        cfg.val_bin,
+        cfg.batch_size,
+        cfg.block_size,
+        cfg.pin_memory,
+        device,
     )
+
+    logger.info("Building optimizer and loss functions")
+    # Build optimizer
+    optimizer = getattr(optimizers, cfg.optimizer)(model, cfg)
+    lr_scheduler = getattr(optimizers, cfg.lr_scheduler)(optimizer, cfg)
+
+    # Build loss functions
+    criterion = GPTLoss()
+
+    # Build automatic mixed precision
+    if cfg.device == "cpu":
+        cfg.use_amp = False
+    scaler = torch.cuda.amp.GradScaler(enabled=cfg.use_amp)
 
     best_loss = float(np.inf)
-    best_auc = -1.0
 
     global_train_step = 0
     global_val_step = 0
-    epoch_current = -1
-    epoch_current_step = -1
-    num_steps = len(train_dataloader)
 
-    resume = cfg.resume
-    if resume:
-        checkpoint = torch.load(weight_last_path)
-        epoch_current = checkpoint["epoch"]
-        epoch_current_step = checkpoint["epoch_current_step"]
-        global_train_step = checkpoint["global_train_step"]
-        global_val_step = checkpoint["global_val_step"]
-        best_loss = checkpoint["best_loss"]
-        model.load_state_dict(checkpoint["state_dict_model"])
-        optimizer.load_state_dict(checkpoint["state_dict_optim_model"])
-        lr_scheduler.load_state_dict(checkpoint["state_dict_scheduler_model"])
-        logger.info(
-            "Resume training from Epoch {}/{} - Step {}/{}".format(
-                epoch_current + 1, cfg.epochs, epoch_current_step, num_steps
-            )
-        )
-    else:
-        logger.info("Start training...")
+    if cfg.resume:
+        raise NotImplementedError
+        # checkpoint = torch.load(weight_last_path)
+        # global_train_step = checkpoint["global_train_step"]
+        # global_val_step = checkpoint["global_val_step"]
+        # best_loss = checkpoint["best_loss"]
+        # model.load_state_dict(checkpoint["state_dict_model"])
+        # optimizer.load_state_dict(checkpoint["state_dict_optim_model"])
+        # lr_scheduler.n_steps = checkpoint["lr_scheduler_step"]
+        # logger.info(
+        # "Resume training from Step {}/{}".format(global_train_step, cfg.num_iters)
+        # )
+
+    logger.info("Start training...")
+    log_rank = seed_offset - SEED
+    # unwrap DDP container if needed
+    raw_model = model.module if ddp else model
 
     with mlflow.start_run():
-        for epoch in range(cfg.epochs):
-            if epoch < 5:
-                model.freeze_encoder()
-            else:
-                model.unfreeze_encoder()
+        total_loss_train = []
+        model.train()
+        for inputs, targets in iter(train_dataloader):
+            if global_train_step >= cfg.num_iters:
+                break
+            global_train_step += 1
 
-            if epoch < epoch_current:
-                continue
-            total_loss_train = []
-            total_auc_train = []
-            logger.info("Train epoch {}/{}".format(epoch + 1, cfg.epochs))
+            with torch.autocast(
+                device_type="cuda" if cfg.device != "cpu" else "cpu",
+                dtype=torch.float16,
+                enabled=cfg.use_amp,
+            ):
+                logits = model(inputs)
+                loss = criterion(logits, targets)
 
-            model.train()
-            with tqdm(total=num_steps, ascii=True) as pbar:
-                for step, (inputs, labels) in enumerate(iter(train_dataloader)):
-                    if cfg.resume:
-                        if epoch_current_step < step:
-                            continue
-                        else:
-                            resume = False
-                            continue
-                    global_train_step += 1
-
-                    optimizer.zero_grad()
-
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
-
-                    outputs = model(inputs)
-                    loss = ccl(outputs, labels)
-                    loss.backward()
-
-                    optimizer.step()
-
-                    inputs = inputs.detach().cpu().numpy()
-                    labels = labels.detach().cpu().numpy()
-                    outputs = outputs.detach().cpu().numpy()
-                    loss = loss.detach().cpu().numpy()
-
-                    probs = scipy.special.softmax(outputs, axis=1)
-                    auc = float(
-                        roc_auc_score(
-                            labels,
-                            probs,
-                            multi_class="ovo",
-                            average="macro",
-                            labels=range(cfg.num_classes),
-                        )
-                    )
-
-                    total_auc_train.append(auc)
-                    total_loss_train.append(loss.item())
-
-                    mlflow.log_metric("loss", loss.item(), step=global_train_step)
-
-                    mlflow.log_metric("auc", auc, step=global_train_step)
-
-                    postfix = "Epoch {}/{} - loss: {:.4f} - auc: {:.4f}".format(
-                        epoch + 1, cfg.epochs, loss.item(), auc
-                    )
-                    pbar.set_description(postfix)
-                    pbar.update(1)
-
-                    if global_train_step % cfg.ckpt_save_fred == 0:
-                        checkpoint = {
-                            "epoch": epoch,
-                            "epoch_current_step": step,
-                            "global_train_step": global_train_step,
-                            "global_val_step": global_val_step,
-                            "best_loss": best_loss,
-                            "state_dict_model": model.state_dict(),
-                            "state_dict_optim_model": optimizer.state_dict(),
-                            "state_dict_scheduler_model": lr_scheduler.state_dict(),
-                        }
-                        torch.save(checkpoint, weight_last_path)
-
-            logger.info(
-                "Epoch {}/{} - epoch_loss: {:.4f} - epoch_auc: {:.4f}".format(
-                    epoch + 1,
-                    cfg.epochs,
-                    np.mean(total_loss_train).item(),
-                    np.mean(total_auc_train).item(),
-                )
-            )
-
-            total_loss_val = []
-            total_auc_val = []
-            model.eval()
-            global_val_step += 1
-            for inputs, labels in tqdm(iter(test_dataloader)):
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                with torch.no_grad():
-                    outputs = model(inputs)
-                    loss = ccl(outputs, labels)
-
-                    inputs = inputs.detach().cpu().numpy()
-                    labels = labels.detach().cpu().numpy()
-                    outputs = outputs.detach().cpu().numpy()
-                    loss = loss.detach().cpu().numpy()
-
-                    probs = scipy.special.softmax(outputs, axis=1)
-                    auc = roc_auc_score(
-                        labels,
-                        probs,
-                        multi_class="ovo",
-                        average="macro",
-                        labels=range(cfg.num_classes),
-                    )
-
-                total_auc_val.append(auc)
-                total_loss_val.append(loss.item())
-            total_loss = np.mean(total_loss_val).item()
-            total_auc = np.mean(total_auc_val).item()
-
-            mlflow.log_metric("val_loss", float(total_loss), step=global_val_step)
-            mlflow.log_metric("val_auc", float(total_auc), step=global_val_step)
-            logger.info(
-                "Epoch {}/{} - val_loss: {:.4f} - val_auc: {:.4f}".format(
-                    epoch + 1, cfg.epochs, total_loss, total_auc
-                )
-            )
-
+            scaler.scale(loss).backward()
+            # clip the gradient
+            if cfg.grad_clip != 0.0:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
             lr_scheduler.step()
 
-            if total_auc > best_auc:
-                best_auc = total_auc
-                torch.save(model.state_dict(), weight_best_path)
+            loss = loss.detach().cpu().numpy()
+            total_loss_train.append(loss.item())
+            mlflow.log_metric(f"loss_{log_rank}", loss.item(), step=global_train_step)
+            if global_train_step % cfg.log_freq == 0 and master_process:
+                logger.info("Loss: {:.4f}".format(loss.item()))
+
+            if global_train_step % cfg.ckpt_save_freq == 0 and master_process:
+                logger.info(
+                    "Loss after {} iters: {:.4f}".format(
+                        cfg.ckpt_save_freq,
+                        np.mean(total_loss_train).item(),
+                    )
+                )
+                total_loss_train = []
+                checkpoint = {
+                    "global_train_step": global_train_step,
+                    "global_val_step": global_val_step,
+                    "best_loss": best_loss,
+                    "state_dict_model": raw_model.state_dict(),
+                    "state_dict_optim_model": optimizer.state_dict(),
+                    "state_dict_scaler": scaler.state_dict(),
+                    "lr_scheduler_step": lr_scheduler.n_steps,
+                }
+                torch.save(checkpoint, weight_last_path)
+
+                total_loss_val = []
+                model.eval()
+                global_val_step += 1
+                logger.info("Evaluating model on the validation dataset")
+                for step, (inputs, targets) in tqdm(
+                    enumerate(iter(val_dataloader)), total=cfg.num_val_iters
+                ):
+                    if step > cfg.num_val_iters:
+                        break
+
+                    with torch.no_grad():
+                        logits = model(inputs)
+                        loss = criterion(logits, targets)
+                        loss = loss.detach().cpu().numpy()
+                    total_loss_val.append(loss.item())
+
+                val_loss = np.mean(total_loss_val).item()
+                mlflow.log_metric("val_loss", val_loss, step=global_val_step)
+                logger.info(
+                    "Iter {}/{} - val_loss: {:.4f} ".format(
+                        global_train_step,
+                        cfg.num_iters,
+                        val_loss,
+                    )
+                )
+
+                if val_loss < best_loss:
+                    best_loss = val_loss
+                    torch.save(raw_model.state_dict(), weight_best_path)
+                model.train()
 
     end_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     logger.info("Training finished at {}".format(end_time))
@@ -286,12 +270,8 @@ def arg_parser():
 if __name__ == "__main__":
     args = arg_parser()
     cfg: Config = import_config(args.config)
-    if cfg.resume and cfg.opt_path:
-        resume = cfg.resume
-        resume_path = cfg.resume_path
-        cfg.load(cfg.opt_path)
-        cfg.resume = resume
-        cfg.resume_path = resume_path
+    if cfg.resume:
+        cfg.load(cfg.resume)
 
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
