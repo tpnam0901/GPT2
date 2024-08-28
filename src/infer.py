@@ -89,6 +89,7 @@ def arg_parser():
         type=float,
         default=500,
     )
+    parser.add_argument("--best_ckpt", action="store_true")
     parser.add_argument("--debug", action="store_true")
     return parser.parse_args()
 
@@ -96,7 +97,7 @@ def arg_parser():
 if __name__ == "__main__":
     args = arg_parser()
     cfg = Config()
-    cfg.load(args.cfg_path)
+    cfg.load(args.config_path)
     level = logging.DEBUG if args.debug else logging.INFO
     logging.basicConfig(
         level=level,
