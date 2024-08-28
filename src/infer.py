@@ -53,12 +53,11 @@ def main(cfg: Config, args: argparse.Namespace):
         dtype=torch.float16,
         enabled=cfg.use_amp,
     ):
-        temperature = 0.8
-        top_k = 200
-        max_new_tokens = 500
         start_ids = encode(args.prompt)
         x = torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...]
-        y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+        y = model.generate(
+            x, args.max_new_tokens, temperature=args.temperature, top_k=args.top_k
+        )
         logger.info(decode(y[0].tolist()))
 
 
