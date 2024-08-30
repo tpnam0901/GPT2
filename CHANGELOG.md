@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.2.0](https://github.com/tpnam0901/PrivateGPT/compare/v0.1.0...v0.2.0) (2024-08-30)
+
+
+### Features
+
+* add change vocab size for model ([bf1ff05](https://github.com/tpnam0901/PrivateGPT/commit/bf1ff05ff2dd69a690f01be9e188d0f2c301cc4c))
+* add custom dataset preparation ([580e809](https://github.com/tpnam0901/PrivateGPT/commit/580e809f5134b51dad14127fc17fc1a63a4da415))
+* add hosting server ([78f5ffb](https://github.com/tpnam0901/PrivateGPT/commit/78f5ffb9105a853a7f7a2b57be44c35a7667003b))
+* add inference script ([a5f177d](https://github.com/tpnam0901/PrivateGPT/commit/a5f177d5de7391a1f8604d6661d8d9b23bf0ccbc))
+* **server_api:** add optional checkpoint ([4099e95](https://github.com/tpnam0901/PrivateGPT/commit/4099e958db78999feec0fc4f95097314131163a6))
+
+
+### Bug Fixes
+
+* duplicate cfg.log file ([960f530](https://github.com/tpnam0901/PrivateGPT/commit/960f5300a6a121d72ebac9ba8444d43e8aabfc4b))
+* duplicate log in mlflow ([bd83877](https://github.com/tpnam0901/PrivateGPT/commit/bd838770e01f5f411ff167992d3039cf0483ee08))
+* eos_token, response message, wrong key json ([f75d810](https://github.com/tpnam0901/PrivateGPT/commit/f75d8102e08652e0780110076e9ebcb003c026d0))
+* infer token of server api, add eot token to input ([20d13fe](https://github.com/tpnam0901/PrivateGPT/commit/20d13fec708c0c4140f8c86a16067afc4e24346b))
+* miss best ckpt, load config ([7616f7c](https://github.com/tpnam0901/PrivateGPT/commit/7616f7c253bc849954ca4e73eeb0c404a331bf43))
+* not passing parameters in the config ([59ed96a](https://github.com/tpnam0901/PrivateGPT/commit/59ed96a790c869973f26dee4eff1fb66587eb9b2))
+* **server_api:** bot repeat the same sentence ([4f7c717](https://github.com/tpnam0901/PrivateGPT/commit/4f7c717cd5e0646c56b3825c5dc33355c8c02bc6))
+* **server_api:** special token ([02f9e4d](https://github.com/tpnam0901/PrivateGPT/commit/02f9e4dafade241c6bc838ba633b1328a5172c90))
+* variable type in args ([c164c7e](https://github.com/tpnam0901/PrivateGPT/commit/c164c7e749e554134b8d2d091d2081c5aa142681))
+
+
+### Documentation
+
+* add export weight ([0438c89](https://github.com/tpnam0901/PrivateGPT/commit/0438c890554e7a66e5ccfc67e9c571e165038bf8))
+* fix username, add inference scripts ([17ed15c](https://github.com/tpnam0901/PrivateGPT/commit/17ed15c17f63468446e54965890fed02c9ca0495))
+
 ## 0.1.0 (2024-08-28)
 
 
