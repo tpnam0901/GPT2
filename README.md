@@ -56,6 +56,11 @@ cd src
 OMP_NUM_THREADS=4 CUDA_VISIBLE_DEVICES=6,7 torchrun --standalone --nproc_per_node=2 train.py -cfg configs/openwebtext_gpt2.py
 ```
 
+- Inference
+```bash
+CUDA_VISIBLE_DEVICES=4 python infer.py "Tell me a funny story" -cfg_path working/checkpoints/GPT2-openwebtext_gpt2/20240828-044348/cfg.log --best_ckpt --max_new_tokens 50
+```
+
 ## References
 
 [1] NanoGPT - A simplest, fastest repository for training/finetuning medium-sized GPTs. Available https://github.com/karpathy/nanoGPT.git
