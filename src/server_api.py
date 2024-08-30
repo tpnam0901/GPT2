@@ -33,6 +33,13 @@ def arg_parser():
         help="Path to config.py file",
     )
     parser.add_argument(
+        "--ckpt_path",
+        type=str,
+        default="",
+        help="Path to checkpoint file",
+    )
+    
+    parser.add_argument(
         "--temperature",
         type=float,
         default=0.8,
@@ -78,6 +85,8 @@ device = cfg.device
 logger = logging.getLogger(cfg.name)
 weight_best_path = os.path.join(cfg.checkpoint_dir, "weight_best.pth")
 weight_last_path = os.path.join(cfg.checkpoint_dir, "weight_last.pt")
+if args.ckpt_path:
+    weight_best_path = weight_last_path = args.ckpt_path
 cpu_device = torch.device("cpu")
 device = torch.device(device)
 model = GPT2(cfg)
