@@ -54,6 +54,7 @@ def main(cfg: Config, args: argparse.Namespace):
         enabled=cfg.use_amp,
     ):
         start_ids = encode(args.prompt)
+        start_ids.append(enc.eot_token)
         x = torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...]
         y = model.generate(
             x, args.max_new_tokens, temperature=args.temperature, top_k=args.top_k
