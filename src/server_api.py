@@ -127,9 +127,9 @@ class StringGeneratorWebService(object):
                     enabled=cfg.use_amp,
                 ):
                     start_ids = []
-                    for msg in content["message"]:
+                    for msg in content["messages"]:
                         start_ids += encode(msg["text"])
-                    start_ids.append(enc.eot_token)
+                        start_ids.append(enc.eot_token)
                     x = torch.tensor(start_ids, dtype=torch.long, device=device)[
                         None, ...
                     ]
@@ -140,7 +140,7 @@ class StringGeneratorWebService(object):
                         top_k=args.top_k,
                     )
                     response = decode(y[0].tolist())
-                    response.split("<|endoftext|>")[0]
+                    response = response.split("<|endoftext|>")[1]
                     logger.info(response)
                 data["text"] = response
             except Exception as e:
