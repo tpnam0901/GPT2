@@ -34,6 +34,13 @@ cd PrivateGPT
 conda env create --name py3.10 --file=environments.yml
 conda activate py3.10
 ```
+
+- Export pretrained model
+```bash
+# Please change the gpt_type in line 12 to match your gpt version
+cd src/tools python export_weight.py
+```
+
 - Download and preprocess dataset
 ```bash
 mkdir -p src/working/dataset/openwebtext
@@ -54,6 +61,11 @@ CUDA_VISIBLE_DEVICES=7 python train.py -cfg configs/openwebtext_gpt2.py
 ```bash
 cd src
 OMP_NUM_THREADS=4 CUDA_VISIBLE_DEVICES=6,7 torchrun --standalone --nproc_per_node=2 train.py -cfg configs/openwebtext_gpt2.py
+```
+
+- Inference
+```bash
+CUDA_VISIBLE_DEVICES=4 python infer.py "Tell me a funny story" -cfg_path working/checkpoints/GPT2-openwebtext_gpt2/20240828-044348/cfg.log --best_ckpt --max_new_tokens 50
 ```
 
 ## References

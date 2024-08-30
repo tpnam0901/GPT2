@@ -41,6 +41,14 @@ class GPT2(nn.Module):
                     p, mean=0.0, std=0.02 / math.sqrt(2 * cfg.n_layer)
                 )
 
+    def change_vocab_size(self, new_vocab_size):
+        self.transformer.wte = nn.Embedding(new_vocab_size, self.config.n_embd)
+        self.lm_head = nn.Linear(self.config.n_embd, new_vocab_size, bias=False)
+        self.transformer.wte.weight = (
+            self.lm_head.weight
+        )  # https://paperswithcode.com/method/weight-tying
+        
+                
     def get_num_params(self, non_embedding=True):
         """
         Return the number of parameters in the model.
