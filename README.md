@@ -34,6 +34,13 @@ cd PrivateGPT
 conda env create --name py3.10 --file=environments.yml
 conda activate py3.10
 ```
+
+- Export pretrained model
+```bash
+# Please change the gpt_type in line 12 to match your gpt version
+cd src/tools python export_weight.py
+```
+
 - Download and preprocess dataset
 ```bash
 mkdir -p src/working/dataset/openwebtext
