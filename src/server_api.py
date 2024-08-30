@@ -25,7 +25,6 @@ import cherrypy
 
 def arg_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("prompt", type=str, help="User input")
     parser.add_argument(
         "-cfg_path",
         "--config_path",
