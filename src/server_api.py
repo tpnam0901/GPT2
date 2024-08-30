@@ -140,7 +140,7 @@ class StringGeneratorWebService(object):
                         top_k=args.top_k,
                     )
                     response = decode(y[0].tolist())
-                    response = response.split("<|endoftext|>")[1]
+                    response = response.split("<|endoftext|>")[1].replace('"', "''")
                     logger.info(response)
                 data["text"] = response
             except Exception as e:
