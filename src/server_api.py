@@ -116,6 +116,7 @@ class StringGeneratorWebService(object):
         content = cherrypy.request.body.read().decode("utf-8")
         content = content.replace('\\"', '"')
         content = content[1:-1]
+        logger.info(f"Received data: {content}")
         content = json.loads(content)
         data = {"text": "INVALID TOKEN!"}
         if str(content["TOKEN"]) == "THIS_IS_MY_CUSTOM_TOKEN":
