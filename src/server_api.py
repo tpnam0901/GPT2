@@ -47,7 +47,13 @@ def arg_parser():
     parser.add_argument(
         "--max_new_tokens",
         type=int,
-        default=100,
+        default=500,
+    )
+
+    parser.add_argument(
+        "--limit_token",
+        type=int,
+        default=1000,
     )
     parser.add_argument("--best_ckpt", action="store_true")
     parser.add_argument(
@@ -127,21 +133,28 @@ class StringGeneratorWebService(object):
                     enabled=cfg.use_amp,
                 ):
                     start_ids = []
+                    count_eos = 0
                     for msg in content["messages"]:
                         start_ids += encode(msg["text"])
                         start_ids.append(enc.eot_token)
-                    x = torch.tensor(start_ids, dtype=torch.long, device=device)[
-                        None, ...
-                    ]
-                    y = model.generate(
-                        x,
-                        args.max_new_tokens,
-                        temperature=args.temperature,
-                        top_k=args.top_k,
-                    )
-                    response = decode(y[0].tolist())
-                    response = response.split("<|endoftext|>")[1].replace('"', "''")
-                    logger.info(response)
+                        count_eos += 1
+                    if len(start_ids) < args.limit_token:
+                        x = torch.tensor(start_ids, dtype=torch.long, device=device)[
+                            None, ...
+                        ]
+                        y = model.generate(
+                            x,
+                            args.max_new_tokens,
+                            temperature=args.temperature,
+                            top_k=args.top_k,
+                        )
+                        response = decode(y[0].tolist())
+                        response = response.split("<|endoftext|>")[count_eos].replace(
+                            '"', "''"
+                        )
+                        logger.info(response)
+                    else:
+                        response = "I'm sorry that you have met our limit-generated token. Please create a new chat to continue using our app."
                 data["text"] = response
             except Exception as e:
                 logger.info(e)
