@@ -102,7 +102,7 @@ def write_dataset(tokenized, start_idx, start_len, mode="r+"):
 
 
 chatbot_dataset = {
-    "python_code_instructions_18k_alpaca": process,
+    "iamtarun/python_code_instructions_18k_alpaca": process,
 }
 
 firstData = True
