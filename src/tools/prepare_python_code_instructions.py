@@ -60,19 +60,17 @@ def get_huggingface_dataset_tokens(name, process_fn):
 
 def process(example):
     ids = []
-    keys = ["Description", "Patient"]
-    for k in keys:
-        question = example[k]
-        question = question.replace('"', "''")
-        question = question.replace("\\", "/")
-        ids += enc.encode_ordinary(question)
-        ids.append(enc.eot_token)
+    question = example["instruction"] + " " + example["input"]
+    question = question.replace('"', "''")
+    question = question.replace("\\", "/")
+    ids += enc.encode_ordinary(question)
+    ids.append(enc.eot_token)
 
-        answer = example["Doctor"]
-        answer = answer.replace('"', "''")
-        answer = answer.replace("\\", "/")
-        ids += enc.encode_ordinary(answer)
-        ids.append(enc.eot_token)
+    answer = example["output"]
+    answer = answer.replace('"', "''")
+    answer = answer.replace("\\", "/")
+    ids += enc.encode_ordinary(answer)
+    ids.append(enc.eot_token)
     # note: I think eot should be prepended not appended... hmm. it's called "eot" though...
     out = {"ids": ids, "len": len(ids)}
     return out
@@ -104,7 +102,7 @@ def write_dataset(tokenized, start_idx, start_len, mode="r+"):
 
 
 chatbot_dataset = {
-    "ruslanmv/ai-medical-chatbot": process,
+    "python_code_instructions_18k_alpaca": process,
 }
 
 firstData = True
