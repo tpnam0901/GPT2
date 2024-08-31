@@ -43,7 +43,7 @@ def get_huggingface_dataset_tokens(name, process_fn):
     dataset = load_dataset(name, num_proc=num_proc_load_dataset)
 
     split_dataset = dataset["train"].train_test_split(
-        test_size=0.0005, seed=1996, shuffle=True
+        test_size=0.05, seed=1996, shuffle=True
     )
     split_dataset["val"] = split_dataset.pop("test")  # rename
 
@@ -86,7 +86,7 @@ def write_dataset(tokenized, start_idx, start_len, mode="r+"):
         dtype = np.uint16  # (can do since enc.max_token_value == 50256 is < 2**16)
         print("Allocate memory")
         arr = np.memmap(filename, dtype=dtype, mode=mode, shape=(arr_len[split],))
-        total_batches = len(dset["ids"]) // 128
+        total_batches = len(dset["ids"]) // 32
         print("Start writing")
         for batch_idx in tqdm(range(total_batches), desc=f"writing {filename}"):
             # Batch together samples for faster write
