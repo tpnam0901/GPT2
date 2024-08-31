@@ -8,6 +8,8 @@ import tiktoken
 from datasets import load_dataset  # huggingface datasets
 import argparse
 
+from tqdm import tqdm
+
 
 def arg_parser():
     parser = argparse.ArgumentParser()
