@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/tpnam0901/PrivateGPT/compare/v0.2.0...v0.3.0) (2024-09-01)
+
+
+### Features
+
+* add everyday converstation llama dataset ([a27179c](https://github.com/tpnam0901/PrivateGPT/commit/a27179c9bd817b42eb2583a5a02b55541bba3b90))
+* add medical dataset ([b79d723](https://github.com/tpnam0901/PrivateGPT/commit/b79d7237f9f642bd906d1f14ec91c3af50def624))
+* add python_code_instructions dataset ([540a33b](https://github.com/tpnam0901/PrivateGPT/commit/540a33bb2d94a180d0827112880e5f622fffb9e9))
+
+
+### Bug Fixes
+
+* dataset name ([0cdcee3](https://github.com/tpnam0901/PrivateGPT/commit/0cdcee3ed15f45dd8e432ad4601cd82dd79c18db))
+* import lib ([5b3cf2c](https://github.com/tpnam0901/PrivateGPT/commit/5b3cf2c7e9e22fda4faa1de590166e8a720a4a6d))
+* too small validation dataset ([1498fad](https://github.com/tpnam0901/PrivateGPT/commit/1498fad88c16cf874ba781c89b4adf85c5a5ffc3))
+
 ## [0.2.0](https://github.com/tpnam0901/PrivateGPT/compare/v0.1.0...v0.2.0) (2024-08-30)
 
 
